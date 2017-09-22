@@ -16,16 +16,16 @@ local scriptWrite = redis:script("LOAD" ,
   local blockSeq , lineSeq 
 
   if uidNumber >= intSize then
-  	blockSeq , lineSeq = math.modf(uidNumber / blockSize) , uidNumber % blockSize
+    blockSeq , lineSeq = math.modf(uidNumber / blockSize) , uidNumber % blockSize
   else
-  	blockSeq , lineSeq = bit.rshift(uidNumber , blockPower) , bit.band(uidNumber , blockSize - 1)
+    blockSeq , lineSeq = bit.rshift(uidNumber , blockPower) , bit.band(uidNumber , blockSize - 1)
   end
   
   local key4N  = table.concat({tableName , "-" , dateTime , "-Nest"})
   local keyT4V = {tableName , "-" , dateTime , "-" , 5 , "-" , "VS"}
   local keyT4M = {tableName , "-" , dateTime , "-" , 5 , "-" , 7 , "-BMP-" , blockSeq}
   
-  local write = function write(keyT4V , keyT4M , index , val , lineSeq , expireTime)
+  local write = function(keyT4V , keyT4M , index , val , lineSeq , expireTime)
     local oldBit
     keyT4V[5] , keyT4M[5] = index , index
     local key4V = table.concat(keyT4V)
@@ -79,15 +79,13 @@ local scriptRead = redis:script("LOAD" ,
 [[
   local result = 0
   local tableName , dateTime = KEYS[1] , KEYS[2]
-  
-  local keyT4N = {tableName , "-" , dateTime , "-Nest"}
-  local key4N = table.concat(keyT4N)
+  local process , recycle    = cjson.decode(ARGV[1]) , cjson.decode(ARGV[2])
+  local key4N = table.concat({tableName , "-" , dateTime , "-Nest"})
 
-  local process = cjson.decode(ARGV[1])
-  local recyple = cjson.decode(ARGV[2])
   for index , value in ipairs(process) do
+    local params
     if value[1] == "BITOP" then
-      local params = {value[1] , value[2] , value[3]}
+      params = {value[1] , value[2] , value[3]}
       for seq = 4 , #value , 2 do
         if value[seq] == "b" then
           table.insert(params , {tableName , "-" , dateTime , "-" , value[seq + 1] , "-BMP-" , 7})
@@ -95,16 +93,15 @@ local scriptRead = redis:script("LOAD" ,
           table.insert(params , value[seq + 1])
         end
       end
-      process[index] = params
     elseif value[1] == "BITCOUNT" then
-      local params = {value[1]}
+      params = {value[1]}
       if value[2] == "b" then
           table.insert(params , {tableName , "-" , dateTime , "-" , value[3] , "-BMP-" , 7})
         elseif value[2] == "t" then
           table.insert(params , value[3])
         end
-      process[index] = params
     end
+    process[index] = params
   end
   
   local bytepos = 0
@@ -114,7 +111,6 @@ local scriptRead = redis:script("LOAD" ,
     for g = pos , pos + 7 - bit.band(pos , 7) do
       local fill = redis.call("getbit" , key4N , g)
       if fill == 1 then
-        local t = 0
         for index , value in ipairs(process) do
           local ps = {}
           for id , item in ipairs(value) do
@@ -125,16 +121,19 @@ local scriptRead = redis:script("LOAD" ,
               ps[id] = item
             end
           end
-          t = redis.call(unpack(ps))
+          if ps[1] == "BITCOUNT" then
+            result = result + redis.call(unpack(ps))
+          else
+            redis.call(unpack(ps))
+          end
         end
-        result = result + t
       end
     end
     bytepos = bit.rshift(pos , 3) + 1 
     pos = redis.call("bitpos" , key4N , 1 , bytepos)
   end
-  if #recyple > 0 then
-    redis.call("del" , unpack(recyple))
+  if #recycle > 0 then
+    redis.call("del" , unpack(recycle))
   end
   return result
 ]]
