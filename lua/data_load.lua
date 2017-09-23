@@ -26,4 +26,4 @@ for line in file:lines() do
   lineNum = lineNum + 1
 end
 ngx.say(lineNum)
-redis:close()
+redis:set_keepalive(10000, 100)
