@@ -1,5 +1,3 @@
 # Doppler
 
-Install Openresty , Redis
-
-
+Install Openresty , Redis , Lpeg
